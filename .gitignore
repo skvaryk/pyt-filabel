@@ -103,3 +103,6 @@ __venv__/
 
 # mypy
 .mypy_cache/
+
+# configs
+*.cfg
