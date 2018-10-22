@@ -20,8 +20,10 @@ class color:
     UNDERLINE = '\033[4m'
     END = '\033[0m'
 
+
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
+
 
 @click.command()
 @click.option('-s', '--state', type=click.Choice(['open', 'closed', 'all']),
@@ -53,7 +55,7 @@ def checkArgs(config_auth, config_labels, reposlugs):
     parser = configparser.ConfigParser()
     with open(config_auth) as auth_file:
         parser.read_file(auth_file)
-        
+
     if(not parser or not parser.has_section('github')):
         eprint('Auth configuration not usable!')
         exit(1)
@@ -74,15 +76,6 @@ def checkArgs(config_auth, config_labels, reposlugs):
         if(len(slug.split('/')) != 2):
             eprint('Reposlug {} not valid!'.format(slug))
             exit(1)
-        # else:
-        #     owner = slug.split('/')[0]
-        #     repo = slug.split('/')[1]
-        #     if(not owner):
-        #         print('Reposlug {} not valid!'.format(slug))
-        #         exit(1)
-        #     if(not repo):
-        #         print('Reposlug {} not valid!'.format(slug))
-        #         exit(1)
 
 
 def parseConfigs(config_auth, config_labels):
@@ -101,9 +94,6 @@ def checkParsedConfigs(auth, labels):
     if(not auth['token']):
         print('Auth configuration not usable!')
         exit(1)
-    # if(not labels):
-    #     print('Labels configuration not usable!')
-    #     exit(1)
 
 
 def setupSession(token):
@@ -126,10 +116,10 @@ def markSlugWithLabels(session, slug, labels_config, delete_old, state, base=Non
 
     owner = slug.split('/')[0]
     repo = slug.split('/')[1]
-    
+
     pr_numbers = []
     pr_labels = []
-    
+
     for i in range(1, 10):
 
         url = getPullsUrl(owner, repo, state, base, i)
@@ -140,7 +130,7 @@ def markSlugWithLabels(session, slug, labels_config, delete_old, state, base=Non
         json_data = json.loads(response.text)
         if(not json_data):
             continue
-    
+
         for pr in json_data:
             pr_numbers.append(pr['number'])
             pr_labels_name_list = list()
@@ -161,9 +151,7 @@ def checkRepoSlug(session, reposlug):
     owner = reposlug.split('/')[0]
     repo = reposlug.split('/')[1]
     url = getPullsUrl(owner, repo, 'all', None, 1)
-    # print(url)
     response = session.get(url)
-    # print(response.text)
     return response.ok
 
 
@@ -174,43 +162,33 @@ def markPrWithLabels(session, owner, repo, state, base, pr_number,
     new_labels = getLabelsFromFiles(files, labels_config)
     all_labels = getAllLabels(
         labels_config, old_labels, new_labels, delete_old)
-    # print(all_labels)
     if(not all_labels[0]):
-        print("  PR https://github.com/{}/{}/pull/{} - OK".format(owner, repo, pr_number))
+        printPrResult(owner, repo, pr_number, True)
         return
     url = getUpdateLabelsUlr(owner, repo, pr_number)
     data = getLabelsPatchData(all_labels[0], all_labels[1])
     response = session.patch(url, data)
     if(not response.ok):
-        print(
-            "  PR https://github.com/{}/{}/pull/{} - FAIL".format(owner, repo, pr_number))
+        printPrResult(owner, repo, pr_number, False)
         return
     response_json = json.loads(response.text)
-    # print(response_json)
     successful_labels = list()
     successful_labels_array = response_json['labels']
     for successful_label_json in successful_labels_array:
         if(not successful_label_json):
             continue
         successful_labels.append(successful_label_json['name'])
-
-    # print(successful_labels)
-
-    # print("all_labels = {}".format(all_labels))
-
     for i in range(0, len(all_labels[0])):
         if(all_labels[1][i] == -1):
             continue
         if(all_labels[0][i] not in successful_labels):
-            print(
-                "  PR https://github.com/{}/{}/pull/{} - FAIL".format(owner, repo, pr_number))
+            printPrResult(owner, repo, pr_number, False)
             return
 
     if(response.ok):
-        print("  PR https://github.com/{}/{}/pull/{} - OK".format(owner, repo, pr_number))
+        printPrResult(owner, repo, pr_number, True)
     else:
-        print(
-            "  PR https://github.com/{}/{}/pull/{} - FAIL".format(owner, repo, pr_number))
+        printPrResult(owner, repo, pr_number, False)
         return
     for i in range(0, len(all_labels[0])):
         if(all_labels[1][i] == 1):
@@ -229,11 +207,10 @@ def getFilesFromPr(session, owner, repo, pr_number, state, base):
     for i in range(1, 10):
         files_url = getFilesUrl(owner, repo, pr_number, state, base, i)
         files_response = session.get(files_url)
-        # print(files_response.status_code)
         json_files = json.loads(files_response.text)
         if(not json_files):
             break
-        # print(json_files)
+
         for json_file in json_files:
             filenames.append(json_file['filename'])
     return filenames
@@ -247,17 +224,14 @@ def getLabelsFromFiles(files, labels_config):
                 regex = fnmatch.translate(fn_string)
                 matcher = re.compile(regex)
                 for filename in files:
-                    # print('search for {} in {}'.format(fn_string, filename))
                     if(matcher.match(filename)):
                         labels_set.add(label)
-    # print(labels_set)
     return labels_set
 
 
 def getAllLabels(labels_config, old_labels, new_labels, delete_old):
     old_labels_to_delete = set()
     old_labels_to_keep = set()
-    # print(old_labels)
     if(delete_old):
         old_labels_to_delete = set(getOldLabelsToDelete(
             labels_config, old_labels, new_labels))
@@ -266,7 +240,6 @@ def getAllLabels(labels_config, old_labels, new_labels, delete_old):
     else:
         old_labels_to_keep = set(old_labels)
     all_labels = sorted(set(old_labels).union(new_labels))
-    # print(sorted_labels)
     state_list = list()
     for label in all_labels:
         if(label in old_labels_to_keep):
@@ -284,6 +257,15 @@ def getOldLabelsToDelete(labels_config, old_labels, new_labels):
         if(label in old_labels and label not in new_labels):
             labels_to_delete.append(label)
     return labels_to_delete
+
+def printPrResult(owner, repo, pr_number, is_ok):
+    output = "  PR https://github.com/{}/{}/pull/{} - "
+    if(is_ok):
+        output = output + "OK"
+    else:
+        output = output + "FAIL"
+
+    print(output.format(owner, repo, pr_number))
 
 
 def getPullsUrl(owner, repo, state, base, page):
